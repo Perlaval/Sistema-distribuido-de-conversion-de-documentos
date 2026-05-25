@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-pdf
+spec:
+  replicas: 1  
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+      - name: fastapi-backend
+        image: triniperea/backend-pdf:v1 # La imagen (el codigo)
+        ports:
+        - containerPort: 8000
+        env:
+        # Inyectamos los ConfigMaps [2]
+        - name: MINIO_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: minio-endpoint
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: backend-config
+              key: redis-host
+        # Inyectamos los Secrets [3]
+        - name: MINIO_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: minio-creds
+              key: access-key
+        - name: MINIO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: minio-creds
+              key: secret-key
