@@ -1,5 +1,5 @@
 # 1. Imagen base de Python (Liviana)
-FROM python:3.9-slim
+FROM python:3.11-slim
 
 # 2. Directorio de trabajo dentro del contenedor
 WORKDIR /app
