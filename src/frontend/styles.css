@@ -1,0 +1,19 @@
+
+body { font-family: Arial, sans-serif; margin: 30px; }
+.container { max-width: 900px; margin: auto; }
+.job { border: 1px solid #ccc; padding: 10px; margin: 10px 0; }
+.pendiente {
+    background: #fff3cd;
+}
+
+.procesando {
+    background: #cfe2ff;
+}
+
+.completado {
+    background: #d1e7dd;
+}
+
+.error {
+    background: #f8d7da;
+}

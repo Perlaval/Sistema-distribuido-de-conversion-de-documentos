@@ -12,7 +12,7 @@ VALKEY_HOST = os.getenv("VALKEY_HOST", "my-valkey-cluster")
 VALKEY_PORT = int(os.getenv("VALKEY_PORT", 6379))
 VALKEY_PASSWORD = os.getenv("VALKEY_PASSWORD", "")
 
-MINIO_HOST = os.getenv("MINIO_HOST", "myminio")
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "myminio:9000")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
 BUCKET = "documentos" # nombre del bucket en MinIO donde van PDFs y TXTs
