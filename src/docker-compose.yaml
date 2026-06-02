@@ -46,6 +46,13 @@ services:
     depends_on:
       - valkey
       - minio
+  
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
 
 volumes:
   #definimos los volumenes administrados por docker con configuracion default
