@@ -1,0 +1,53 @@
+services:
+  valkey:
+    image: valkey/valkey:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data:/data
+
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"   # API de minio
+      - "9001:9001"   # consola web
+    environment:
+      # esta bien que usemos esta credenciales porque son para desarrollo local
+      MINIO_ROOT_USER: minioadmin #minio starts using default root credentials (minio/minio:lastest)
+      MINIO_ROOT_PASSWORD: minioadmin #minio starts using default root credentials (minio/minio:lastest)
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data # convención de la imagen oficial de minio
+
+  backend:
+    build: ./backend #en este caso no usamos una imagen, sino que construimos desde el dockerfile que esta en ./backend
+    ports:
+      - "8000:8000" #expone FastApi para que el cliente se pueda conectar
+    environment:
+      VALKEY_HOST: valkey #docker compose construye una red para que cada servico se pueda encontrar por su nombre
+      VALKEY_PORT: 6379
+      VALKEY_PASSWORD: "" #${VALKEY_PASSWORD:-}
+      MINIO_HOST: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    depends_on:
+      - valkey
+      - minio
+
+  worker:
+    build: ./worker
+    environment:
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      VALKEY_PASSWORD: "" #${VALKEY_PASSWORD:-}
+      MINIO_HOST: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    depends_on:
+      - valkey
+      - minio
+
+volumes:
+  #definimos los volumenes administrados por docker con configuracion default
+  valkey_data:
+  minio_data:

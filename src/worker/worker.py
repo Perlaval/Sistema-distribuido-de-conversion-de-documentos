@@ -23,7 +23,7 @@ CONSUMER = os.getenv("HOSTNAME", "worker-1")  # cada pod tiene su propio hostnam
 
 # Conexiones ------------------------------------------------------------------------------------------
 
-r = redis.Redis(host=VALKEY_HOST, port=VALKEY_PORT, password=VALKEY_PASSWORD, decode_responses=True)
+r = redis.Redis(host=VALKEY_HOST, port=VALKEY_PORT, password=VALKEY_PASSWORD, decode_responses=True,socket_timeout = None)
 minio_client = Minio(MINIO_HOST, access_key=MINIO_ACCESS_KEY, secret_key=MINIO_SECRET_KEY, secure=False)
 
 #Inicializacion del stream ----------------------------------------------------------------------------
@@ -44,29 +44,33 @@ def inicializar_stream():
 def iniciar_worker():
     print("Worker iniciado, esperando mensajes...")
     while True:
-        # Leemos el mensaje del stream, espera hasta 5 segundos si no hay mensajes
-        mensajes = r.xreadgroup(GROUP, CONSUMER, {STREAM: ">"}, count=1, block=5000)
+        # Agregamos try except y sacamos block para que el worker se siga ejecutando por tiempo indefinido
+        try:
+            # Leemos el mensaje del stream, espera hasta 5 segundos si no hay mensajes
+            mensajes = r.xreadgroup(GROUP, CONSUMER, {STREAM: ">"}, count=1) #block=5000
 
-        if not mensajes:
-            continue  # seguimos esperando hasta que llegue un mensaje
+            if not mensajes:
+                continue  # seguimos esperando hasta que llegue un mensaje
 
-        for stream, lista_mensajes in mensajes:
-        # stream = "trabajos"
-        # lista_mensajes = [("1717123456789-0", {"job_id": "abc123", "file_path": "pdfs/abc123.pdf"})]
-            for msg_id, datos in lista_mensajes:
-                # msg_id = "1717123456789-0" 
-                # datos  = {"job_id": "abc123", "file_path": "pdfs/abc123.pdf"}
-                job_id = datos["job_id"]
-                file_path = datos["file_path"]
-                print(f"Procesando job {job_id}")
+            for stream, lista_mensajes in mensajes:
+            # stream = "trabajos"
+            # lista_mensajes = [("1717123456789-0", {"job_id": "abc123", "file_path": "pdfs/abc123.pdf"})]
+                for msg_id, datos in lista_mensajes:
+                    # msg_id = "1717123456789-0" 
+                    # datos  = {"job_id": "abc123", "file_path": "pdfs/abc123.pdf"}
+                    job_id = datos["job_id"]
+                    file_path = datos["file_path"]
+                    print(f"Procesando job {job_id}")
 
-                procesar_mensaje(job_id, file_path)
+                    procesar_mensaje(job_id, file_path)
 
-                # Confirmamos que el mensaje fue procesado correctamente
-                r.xack(STREAM, GROUP, msg_id)
-                # le dice a Valkey que este mensaje fue procesado exitosamente
-                # si el worker se cae antes del xack, el mensaje queda disponible para reintento
-
+                    # Confirmamos que el mensaje fue procesado correctamente
+                    r.xack(STREAM, GROUP, msg_id)
+                    # le dice a Valkey que este mensaje fue procesado exitosamente
+                    # si el worker se cae antes del xack, el mensaje queda disponible para reintento
+        except Exception as e:
+            print("Error en worker:", e)
+        
 def extraer_texto(pdf_path, job_id):
     try:
         texto = extract_text(pdf_path)
