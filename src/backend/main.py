@@ -1,17 +1,17 @@
 from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException
 from fastapi.responses import StreamingResponse
-import uuid
+from minio import Minio
+from minio.error import S3Error
 import redis
+import uuid
+import io
 import os
 import io
 import zipfile
-from minio import Minio
-from minio.error import S3Error
 
 
 app = FastAPI()
 
-# Configuración desde variables de entorno
 VALKEY_HOST = os.getenv("VALKEY_HOST", "localhost")
 VALKEY_PORT = int(os.getenv("VALKEY_PORT", 6379))
 VALKEY_PASSWORD = os.getenv("VALKEY_PASSWORD", "")
@@ -21,13 +21,21 @@ MINIO_HOST = os.getenv("MINIO_HOST", "myminio")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
 
-
 BUCKET = "documentos"
 STREAM = "trabajos"
 
-# Clientes de infraestructura
-redis_client = redis.Redis(host=VALKEY_HOST, port=VALKEY_PORT, password=VALKEY_PASSWORD, decode_responses=True)
-minio_client = Minio(MINIO_HOST, access_key=MINIO_ACCESS_KEY, secret_key=MINIO_SECRET_KEY, secure=False)
+redis_client = redis.Redis(
+    host=VALKEY_HOST,
+    port=VALKEY_PORT,
+    password=VALKEY_PASSWORD,
+    decode_responses=True
+)
+
+minio_client = Minio(MINIO_HOST, 
+    access_key=MINIO_ACCESS_KEY, 
+    secret_key=MINIO_SECRET_KEY, 
+    secure=False)
+
 
 @app.on_event("startup")
 async def startup():
@@ -111,6 +119,8 @@ async def upload_pdf(file: UploadFile = File(...)):
 
                 jobs.append(job_id)
 
+                redis_client.set(f"estado:{job_id}", "Pendiente")
+
             return {
                 "mensaje": "ZIP procesado",
                 "cantidad_pdfs": len(jobs),
@@ -125,7 +135,7 @@ async def upload_pdf(file: UploadFile = File(...)):
             status_code=400,
             detail="Solo se aceptan archivos PDF o ZIP"
         )
-
+    
 
 @app.get("/estado/{job_id}")
 async def get_status(job_id: str):
@@ -137,7 +147,7 @@ async def get_status(job_id: str):
         return {"job_id": job_id, "estado":"Completado"}
     except S3Error:
         pass
-
+    
     #Si no esta en MinIO, consultamos Valkey
     # Endpoint para que el cliente haga Polling mediante AJAX [11]
     status = redis_client.get(f"estado:{job_id}")
