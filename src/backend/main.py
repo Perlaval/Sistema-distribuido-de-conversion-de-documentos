@@ -1,5 +1,6 @@
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, WebSocket
 from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from minio import Minio
 from minio.error import S3Error
 import redis
@@ -8,9 +9,18 @@ import io
 import os
 import io
 import zipfile
+import asyncio
 
 
 app = FastAPI()
+
+## CORS para que el navegador no bloquee la respuesa
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 VALKEY_HOST = os.getenv("VALKEY_HOST", "localhost")
 VALKEY_PORT = int(os.getenv("VALKEY_PORT", 6379))
@@ -167,3 +177,31 @@ async def get_resultado(job_id: str):
         )
     except S3Error:
         raise HTTPException(status_code=404, detail="Resultado no disponible todavía")
+
+
+## web socket para comunicacion con el cliente
+@app.websocket("/ws/{job_id}")
+async def websocket_status(websocket: WebSocket, job_id: str):
+    await websocket.accept()
+    while True:
+        # Reutilizás la misma lógica de /estado
+        try:
+            minio_client.stat_object(BUCKET, f"txt/{job_id}.txt")
+            redis_client.set(f"estado:{job_id}", "Completado")
+            await websocket.send_json({"estado": "Completado"})
+            break  # estado final, cerramos
+        except S3Error:
+            pass
+
+        status = redis_client.get(f"estado:{job_id}")
+        if status:
+            await websocket.send_json({"estado": status})
+        else:
+            await websocket.send_json({"estado": "Tarea no encontrada"})
+
+        await asyncio.sleep(2)
+
+    await websocket.close()
+
+
+
