@@ -10,6 +10,7 @@ import os
 import io
 import zipfile
 import asyncio
+import json
 
 
 app = FastAPI()
@@ -94,6 +95,7 @@ async def upload_pdf(file: UploadFile = File(...)):
         zip_buffer = io.BytesIO(contenido_zip)
 
         jobs = []
+        batch_id = str(uuid.uuid4())
 
         with zipfile.ZipFile(zip_buffer, "r") as zip_ref:
             
@@ -111,6 +113,7 @@ async def upload_pdf(file: UploadFile = File(...)):
                 pdf_data = zip_ref.read(info.filename)
 
                 job_id = str(uuid.uuid4())
+                
 
                 file_path = f"pdfs/{job_id}.pdf"
 
@@ -127,15 +130,24 @@ async def upload_pdf(file: UploadFile = File(...)):
                     "file_path": file_path
                 })
 
+
                 jobs.append(job_id)
+                
 
                 redis_client.set(f"estado:{job_id}", "Pendiente")
 
+            redis_client.set(f"batch:{batch_id}", json.dumps(jobs))
+
             return {
-                "mensaje": "ZIP procesado",
-                "cantidad_pdfs": len(jobs),
-                "jobs": jobs
+                "batch_id": batch_id,
+                "cantidad_pdfs": len(jobs)
             }
+
+           ## return {
+            ##    "mensaje": "ZIP procesado",
+            ##    "cantidad_pdfs": len(jobs),
+            ##    "jobs": jobs
+           ## }
                 #else:
                     #raise HTTPException(status_code=400, detail="Solo se aceptan archivos PDF")
      # ---------------- ERROR ----------------
@@ -165,6 +177,7 @@ async def get_status(job_id: str):
         return {"error": "Tarea no encontrada"}
     return {"job_id": job_id, "estado": status} #status.decode("utf-8")
 
+'''
 @app.get("/resultado/{job_id}")
 async def get_resultado(job_id: str):
     # Endpoint para descargar el TXT resultante
@@ -177,7 +190,49 @@ async def get_resultado(job_id: str):
         )
     except S3Error:
         raise HTTPException(status_code=404, detail="Resultado no disponible todavía")
+'''
 
+@app.get("/estado_zip/{batch_id}")
+async def estado_zip(batch_id: str):
+
+    batch = redis_client.get(f"batch:{batch_id}")
+
+    if not batch:
+        raise HTTPException(
+            status_code=404,
+            detail="Lote no encontrado"
+        )
+
+    jobs = json.loads(batch)
+
+    total = len(jobs)
+    completados = 0
+    errores = 0
+
+    for job_id in jobs:
+
+        estado = redis_client.get(f"estado:{job_id}")
+
+        if estado == "Completado":
+            completados += 1
+
+        elif estado and estado.startswith("error"):
+            errores += 1
+
+    if completados == total:
+
+        return {
+            "estado": "Completado",
+            "completados": completados,
+            "total": total
+        }
+
+    return {
+        "estado": "Procesando",
+        "completados": completados,
+        "errores": errores,
+        "total": total
+    }
 
 ## para descargar el archivo ya convertido
 @app.get("/download/{job_id}")
@@ -203,6 +258,48 @@ async def download_file(job_id: str):
             status_code=404,
             detail="Archivo no encontrado"
         )
+
+@app.get("/download_zip/{batch_id}")
+async def download_zip(batch_id: str):
+
+    batch = redis_client.get(f"batch:{batch_id}")
+
+    if not batch:
+        raise HTTPException(
+            status_code=404,
+            detail="Lote no encontrado"
+        )
+
+    jobs = json.loads(batch)
+
+    zip_buffer = io.BytesIO()
+
+    with zipfile.ZipFile(zip_buffer, "w") as zipf:
+
+        for job_id in jobs:
+
+            obj = minio_client.get_object(
+                BUCKET,
+                f"txt/{job_id}.txt"
+            )
+
+            contenido = obj.read()
+
+            zipf.writestr(
+                f"{job_id}.txt",
+                contenido
+            )
+
+    zip_buffer.seek(0)
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition":
+            f'attachment; filename="resultados.zip"'
+        }
+    )
 
 ## web socket para comunicacion con el cliente
 @app.websocket("/ws/{job_id}")

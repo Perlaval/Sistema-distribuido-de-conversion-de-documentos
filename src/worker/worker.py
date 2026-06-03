@@ -90,7 +90,7 @@ def procesar_mensaje(job_id, file_path):
     try:
 
         # 1. Actualizamos el estado a "procesando" en Valkey
-        r.set(f"estado:{job_id}", "procesando")
+        r.set(f"estado:{job_id}", "Procesando")
 
         # 2. Descargamos el PDF desde MinIO a un archivo temporal
         # porque pdfminer necesita leer el pdf desde el disco local
@@ -114,8 +114,8 @@ def procesar_mensaje(job_id, file_path):
         minio_client.fput_object(BUCKET, txt_path, tmp_txt_path)
 
         # 5. Actualizamos el estado a "completado" en Valkey
-        r.set(f"estado:{job_id}", "completado")
-        print(f"Job {job_id} completado")
+        r.set(f"estado:{job_id}", "Completado")
+        print(f"Job {job_id} Completado")
 
     except Exception as e:
         r.set(f"estado:{job_id}", "error")
