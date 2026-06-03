@@ -179,6 +179,31 @@ async def get_resultado(job_id: str):
         raise HTTPException(status_code=404, detail="Resultado no disponible todavía")
 
 
+## para descargar el archivo ya convertido
+@app.get("/download/{job_id}")
+async def download_file(job_id: str):
+
+    try:
+        obj = minio_client.get_object(
+            BUCKET,
+            f"txt/{job_id}.txt"
+        )
+
+        return StreamingResponse(
+            obj,
+            media_type="text/plain",
+            headers={
+                "Content-Disposition":
+                f'attachment; filename="{job_id}.txt"'
+            }
+        )
+
+    except Exception:
+        raise HTTPException(
+            status_code=404,
+            detail="Archivo no encontrado"
+        )
+
 ## web socket para comunicacion con el cliente
 @app.websocket("/ws/{job_id}")
 async def websocket_status(websocket: WebSocket, job_id: str):

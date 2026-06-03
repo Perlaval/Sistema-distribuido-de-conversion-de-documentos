@@ -2,6 +2,7 @@
 
 // Variables globales
 var pollingInterval = null;
+var currentJobId = null;
 
 
 // Función que actualiza el UI
@@ -25,6 +26,23 @@ function startWebSocket(uuid) {
         var data = JSON.parse(event.data);
         updateUI(data.estado, data.estado);
 
+        // agrego para poder descargar en el front
+        if (data.estado === 'Completado') {
+          $("#btn-descargar")
+            .attr(
+                "href",
+                "http://127.0.0.1:8000/download/" + currentJobId
+            )
+            .show();
+        }
+        /*
+        if (data.estado === 'Completado') {
+
+        $("#btn-descargar")
+            .attr("href", data.url)
+            .show();
+    }*/
+
         if (data.estado === 'Completado' || data.estado === 'Tarea no encontrada') {
             ws.close();  //
         }
@@ -35,33 +53,6 @@ function startWebSocket(uuid) {
     };
 }
 
-/*
-function startPolling(uuid) {
-  pollingInterval = setInterval(function() {
-
-    $.ajax({
-      url: 'http://127.0.0.1:8000/estado/' + uuid,
-     // url:      '/estado/' + uuid,
-      method:   'GET',
-      dataType: 'json',
-
-      success: function(data) {
-        updateUI(data.status, data.message);
-
-        // Detener al llegar a un estado final
-        if (data.status === 'done' || data.status === 'error') {
-          clearInterval(pollingInterval);
-        }
-      },
-
-      error: function(xhr, textStatus) {
-        clearInterval(pollingInterval);
-        updateUI('error', 'Error de conexión: ' + textStatus);
-      }
-    });
-
-  }, 2000);
-}*/
 
 // El POST inicial + llamada a startPolling
 $(document).ready(function() {
@@ -73,10 +64,22 @@ $(document).ready(function() {
       data:        new FormData($('#mi-form')[0]),
       contentType: false,
       processData: false,
+
       success: function(response) {
+        currentJobId = response.job_id;
         startWebSocket(response.job_id);
       }
     });
   });
 
 });
+
+
+$("#file").on("change", function () {
+    const archivo = this.files[0];
+
+    if (archivo) {
+        $("#file-name").text(archivo.name);
+    }
+});
+
