@@ -5,6 +5,7 @@ from minio.error import S3Error
 import redis
 from pdfminer.high_level import extract_text
 import tempfile
+import time
 
 # Configuración desde variables de entorno------------------------------------------------------------
 
@@ -52,6 +53,7 @@ def iniciar_worker():
             if not mensajes:
                 continue  # seguimos esperando hasta que llegue un mensaje
 
+            
             for stream, lista_mensajes in mensajes:
             # stream = "trabajos"
             # lista_mensajes = [("1717123456789-0", {"job_id": "abc123", "file_path": "pdfs/abc123.pdf"})]
@@ -62,7 +64,10 @@ def iniciar_worker():
                     file_path = datos["file_path"]
                     print(f"Procesando job {job_id}")
 
+                    inicio = time.time()
                     procesar_mensaje(job_id, file_path)
+                    fin = time.time()
+                    print(f"Job {job_id} tardó {fin - inicio:.2f} segundos")
 
                     # Confirmamos que el mensaje fue procesado correctamente
                     r.xack(STREAM, GROUP, msg_id)

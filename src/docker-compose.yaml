@@ -43,6 +43,7 @@ services:
       MINIO_HOST: minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
+      PYTHONUNBUFFERED: "1"
     depends_on:
       - valkey
       - minio
