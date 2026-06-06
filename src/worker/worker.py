@@ -22,6 +22,9 @@ GROUP = "workers" # nombre del grupo de consumidores, permite que varios workers
                     #lean el stream sin procesar el mismo mensaje dos veces
 CONSUMER = os.getenv("HOSTNAME", "worker-1")  # cada pod tiene su propio hostname
 
+# Configuracion del Claiming
+TIEMPO_MIN_INACTIVO = 30000 # consideramos muerto el worker si pierde la conexion por mas de 30seg 
+
 # Conexiones ------------------------------------------------------------------------------------------
 
 r = redis.Redis(host=VALKEY_HOST, port=VALKEY_PORT, password=VALKEY_PASSWORD, decode_responses=True,socket_timeout = None)
@@ -47,7 +50,37 @@ def iniciar_worker():
     while True:
         # Agregamos try except y sacamos block para que el worker se siga ejecutando por tiempo indefinido
         try:
-            # Leemos el mensaje del stream, espera hasta 5 segundos si no hay mensajes
+
+            #1. Chequeamos si hay trabajpos abandonados
+            start_id = "0-0" #para buscar desde el inicio del stream
+            claim = r.xautoclaim(STREAM, GROUP, CONSUMER, TIEMPO_MIN_INACTIVO, start_id=start_id, count=1) 
+            
+            #xautoclaim nos devuelve: (next_start_id, [lista_mensajes], [lista_ids_borrados])
+            _, mensajes_trabajo_pendiente, _ = claim
+
+            if mensajes_trabajo_pendiente:
+                print(f"[{CONSUMER}] Reclamando trabajo abandonado...")
+                for msg_id, datos in mensajes_trabajo_pendiente:
+                    # msg_id = "1717123456789-0" 
+                    # datos  = {"job_id": "abc123", "file_path": "pdfs/abc123.pdf"}
+                    job_id = datos["job_id"]
+                    file_path = datos["file_path"]
+                    print(f"Worker recibió job {job_id}")
+                    print(f"Procesando job {job_id}")
+
+                    inicio = time.time()
+                    #time.sleep(5)
+                    procesar_mensaje(job_id, file_path)
+                    fin = time.time()
+                    print(f"Job {job_id} tardó {fin - inicio:.2f} segundos")
+
+                    r.xack(STREAM, GROUP, msg_id)
+                continue # Al procesar uno, volvemos al inicio del bucle para ver si hay más
+
+
+
+
+            #2. Leemos el mensaje nuevo del stream, espera hasta 5 segundos si no hay mensajes
             mensajes = r.xreadgroup(GROUP, CONSUMER, {STREAM: ">"}, count=1, block=5000) #block=5000
 
             #if not mensajes:
@@ -70,10 +103,28 @@ def iniciar_worker():
                     fin = time.time()
                     print(f"Job {job_id} tardó {fin - inicio:.2f} segundos")
 
+                    if CONSUMER == "src-worker-2":
+                        print(f"[{CONSUMER}] Simulando muerte subita antes del ack (SIGKILL)...")
+                        # Caso worker caido
+                        os._exit(137) #en este caso minio ya tiene el archivo convertido, pero valkey no recibio la confirmacion de que el job ya fue procesado
+
+                        #Caso worker vivo pero funcionalmente muerto
+                        #time.sleep(10000) 
+
+
                     # Confirmamos que el mensaje fue procesado correctamente
                     r.xack(STREAM, GROUP, msg_id)
                     # le dice a Valkey que este mensaje fue procesado exitosamente
                     # si el worker se cae antes del xack, el mensaje queda disponible para reintento
+
+        except redis.exceptions.ConnectionError as exc:
+            if "NOGROUP" in str(exc):
+                print("[ALERTA] Se detectó que el Stream o Grupo desapareció. Re-inicializando...")
+                inicializar_stream() 
+            else:
+                print("Error de conexión con Valkey. Reintentando en 5 segundos...")
+                time.sleep(5)
+
         except Exception as e:
             print("Error en worker:", e)
         

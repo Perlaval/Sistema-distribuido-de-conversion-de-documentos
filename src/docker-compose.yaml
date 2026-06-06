@@ -1,6 +1,7 @@
 services:
   valkey:
     image: valkey/valkey:latest
+    command: valkey-server --appendonly yes
     ports:
       - "6379:6379"
     volumes:
@@ -30,21 +31,85 @@ services:
       MINIO_HOST: minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
+      PYTHONUNBUFFERED: "1"
     depends_on:
       - valkey
       - minio
 
-  worker:
+  #worker:
+    #build: ./worker
+    # Esto fuerza a que el hostname interno sea igual al nombre del servicio y su número de réplica
+    #deploy:
+      #replicas: 4
+    #environment:
+      #VALKEY_HOST: valkey
+      #VALKEY_PORT: 6379
+      #VALKEY_PASSWORD: "" #${VALKEY_PASSWORD:-}
+      #MINIO_HOST: minio:9000
+      #MINIO_ACCESS_KEY: minioadmin
+      #MINIO_SECRET_KEY: minioadmin
+      #PYTHONUNBUFFERED: "1"
+    #depends_on:
+      #- valkey
+      #- minio
+
+  worker-1:
     build: ./worker
+    container_name: src-worker-1
     environment:
       VALKEY_HOST: valkey
       VALKEY_PORT: 6379
-      VALKEY_PASSWORD: "" #${VALKEY_PASSWORD:-}
       MINIO_HOST: minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       PYTHONUNBUFFERED: "1"
-    depends_on:
+      HOSTNAME: "src-worker-1" # <--- Manual y seguro
+    depends_on: 
+      - valkey
+      - minio
+
+  worker-2:
+    build: ./worker
+    container_name: src-worker-2
+    environment:
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      MINIO_HOST: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      PYTHONUNBUFFERED: "1"
+      HOSTNAME: "src-worker-2"
+    depends_on: 
+      - valkey
+      - minio
+
+  worker-3:
+    build: ./worker
+    container_name: src-worker-3
+    environment:
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      MINIO_HOST: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      PYTHONUNBUFFERED: "1"
+      HOSTNAME: "src-worker-3"
+    depends_on: 
+      - valkey 
+      - minio
+
+  worker-4:
+    build: ./worker
+    container_name: src-worker-4
+    environment:
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      MINIO_HOST: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      PYTHONUNBUFFERED: "1"
+      HOSTNAME: "src-worker-4"
+    depends_on: 
       - valkey
       - minio
   

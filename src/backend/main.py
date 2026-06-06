@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, WebSocket
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, WebSocket, Form
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from minio import Minio
@@ -39,7 +39,10 @@ redis_client = redis.Redis(
     host=VALKEY_HOST,
     port=VALKEY_PORT,
     password=VALKEY_PASSWORD,
-    decode_responses=True
+    decode_responses=True,
+    socket_timeout=0.5,
+    socket_connect_timeout=0.5
+
 )
 
 minio_client = Minio(MINIO_HOST, 
@@ -98,24 +101,61 @@ async def upload_pdf(file: UploadFile = File(...)):
         #batch_id = str(uuid.uuid4())
         # agrego este solo para depurar logs,luego lo cambiamos
         batch_id = f"batch-{uuid.uuid4().hex[:8]}"
+        #if not batch_id:
+            #batch_id = f"batch-{uuid.uuid4().hex[:8]}"
 
+        #1. Inicialmente recorremos el zip para crear la lista con los jobs
+        # y armar el batch_info que se va a almacenar en minio
         with zipfile.ZipFile(zip_buffer, "r") as zip_ref:
             
+            #Obtenemos solo los archivos .pdf del zip
+            pdf_infos = [info for info in zip_ref.infolist() if not info.is_dir() and info.filename.lower().endswith(".pdf")]
+
+            if not pdf_infos:
+                raise HTTPException(
+                    status_code=400,
+                    detail="El ZIP no contiene archivos PDF"
+                )
+
+
             #usamos infolist pq el zip puede tener adentro otras carpetas entonces si lanzamos la excepcion teniendo en cuenta que algun archivo dentro del zip no es .pdf no me procesa los archivos que si son .pdf
-            for info in zip_ref.infolist():
+            for info in pdf_infos:
                 
-                if info.is_dir():
-                    continue
-                
-                if not info.filename.lower().endswith(".pdf"):
-                    continue
-
-                pdf_data = zip_ref.read(info.filename)
-
                 job_id = str(uuid.uuid4())
 
                 original_name = os.path.basename(info.filename)
                 
+                jobs.append({
+                    "job_id": job_id,
+                    "original_name": original_name,
+                    "path": info.filename
+                })
+                
+            # El estado nos va a permitir saber si se completo la conversion de todos los pdfs del zip en caso de que se caiga el back
+            # Si el job no se proceso cuando busque en esa ruta en minio voy detectar un error
+            batch_info = {
+                "batch_id": batch_id,
+                #"estado": "Pendiente",
+                "jobs": jobs
+            }
+
+            batch_json = json.dumps(batch_info).encode("utf-8")
+
+            # Lo guardamos en minio porque si se cae redis y ya los workers habia procesado todos los pdfs del zip, el cliente deberia poder descargar su zip convertido
+            minio_client.put_object(
+                BUCKET,
+                f"batches/{batch_id}.json",
+                io.BytesIO(batch_json),
+                length=len(batch_json),
+                content_type="application/json"
+            )
+
+            #2. Subimos los pdfs a mino y enviamos los jobs a Valkey
+            for job in jobs:
+                
+                pdf_data = zip_ref.read(job["path"])
+
+                job_id = job["job_id"]
 
                 file_path = f"pdfs/{job_id}.pdf"
 
@@ -131,34 +171,39 @@ async def upload_pdf(file: UploadFile = File(...)):
                     #"batch_id": batch_id,
                     "job_id": job_id,
                     "file_path": file_path
-                })
+                }) 
 
+                redis_client.set(
+                    f"estado:{job_id}",
+                    "Pendiente"
+                )
+            
+            # Eliminamos path de la estructura porque no lo vamos a necesitar mas
+            for job in jobs:
+                job.pop("path", None)
 
-                jobs.append({
-                    "job_id": job_id,
-                    "original_name": original_name
-                })
-                
-                redis_client.set(f"estado:{job_id}", "Pendiente")
+            #3. Actualizamos el estado del batch
+            """batch_info["estado"] = "Completado"
 
-            redis_client.set(f"batch:{batch_id}", json.dumps(jobs))
+            batch_json = json.dumps(batch_info).encode("utf-8")
 
+            minio_client.put_object(
+                BUCKET,
+                f"batches/{batch_id}.json",
+                io.BytesIO(batch_json),
+                length=len(batch_json),
+                content_type="application/json"
+            )"""
+        
             print(f"Batch creado: {batch_id}")
-            print(f"Job creado: {job_id}")
+            #print("[BACKEND] ¡CRASH! Simulando caída del backend antes de enviar a Valkey...")
+            #os._exit(137)
 
             return {
                 "batch_id": batch_id,
                 "cantidad_pdfs": len(jobs)
             }
-
-           ## return {
-            ##    "mensaje": "ZIP procesado",
-            ##    "cantidad_pdfs": len(jobs),
-            ##    "jobs": jobs
-           ## }
-                #else:
-                    #raise HTTPException(status_code=400, detail="Solo se aceptan archivos PDF")
-     # ---------------- ERROR ----------------
+    # ---------------- ERROR ----------------
 
     else:
         raise HTTPException(
@@ -203,58 +248,90 @@ async def get_resultado(job_id: str):
 @app.get("/estado_zip/{batch_id}")
 async def estado_zip(batch_id: str):
 
-    batch = redis_client.get(f"batch:{batch_id}")
-
-    if not batch:
-        raise HTTPException(
-            status_code=404,
-            detail="Lote no encontrado"
+    try:
+        obj = minio_client.get_object(
+            BUCKET,
+            f"batches/{batch_id}.json"
         )
 
-    jobs = json.loads(batch)
+        batch = json.loads(
+        obj.read().decode("utf-8")
+        )
 
-    total = len(jobs)
-    completados = 0
-    errores = 0
+        #batch = redis_client.get(f"batch:{batch_id}")
+        #jobs = json.loads(batch)
 
-    for job in jobs:
+        jobs = batch["jobs"]
 
-        job_id = job["job_id"]
+        total = len(jobs)
+        completados = 0
+        errores = 0
 
-        #---------------------------------------
+        #Verificamos si valkey está disponible una sola vez
+        valkey_disponible = True
+
         try:
-            minio_client.stat_object(BUCKET, f"txt/{job_id}.txt")
-            #si no lanza excepción, el archivo existe y su estado es completado
-            estado = "Completado"
-        
-        except S3Error:
-            #Si no esta en MinIO, consultamos Valkey
-            estado = redis_client.get(f"estado:{job_id}") #MANEJAR SI VALKEY SE CAE
-            #if not status:
-                #return {"error": "Tarea no encontrada"}
+            redis_client.ping()
+        except Exception:
+            valkey_disponible = False
+            print("Valkey no disponible, usando solo MinIO como fuente de verdad")
 
-                     
-        if estado == "Completado":
-            completados += 1
 
-        elif estado and estado.startswith("error"):
-            errores += 1
 
-    if completados + errores == total:
+        for job in jobs:
+
+            job_id = job["job_id"]
+
+            #---------------------------------------
+            try:
+                minio_client.stat_object(BUCKET, f"txt/{job_id}.txt")
+                #si no lanza excepción, el archivo existe y su estado es completado
+                estado = "Completado"
+                print(f"✅ {job_id}: TXT encontrado")
+            
+            except S3Error as e:
+                #Si no esta en MinIO, consultamos Valkey solo si esta disponible
+                if valkey_disponible:
+                    estado = redis_client.get(f"estado:{job_id}")
+                    if estado and estado.startswith("error"):
+                        errores += 1
+                        continue
+                # Si Valkey no está o no tiene estado, el job sigue procesándose
+                print(f"❌ {job_id}: TXT NO encontrado - {e}")
+                estado = "Pendiente"
+                        
+            if estado == "Completado":
+                completados += 1
+
+            elif estado and estado.startswith("error"):
+                errores += 1
+
+        if completados + errores == total:
+
+            return {
+                "estado": "Completado",
+                "completados": completados,
+                "errores": errores,
+                "total": total
+            }
 
         return {
-            "estado": "Completado",
+            "estado": "Procesando",
             "completados": completados,
             "errores": errores,
             "total": total
         }
 
-    return {
-        "estado": "Procesando",
-        "completados": completados,
-        "errores": errores,
-        "total": total
-    }
+
+    except S3Error:
+        raise HTTPException(
+            status_code=404,
+            detail="Lote no encontrado"
+        )
+
+    
+
+    
 
 ## para descargar el archivo ya convertido
 @app.get("/download/{job_id}")
@@ -284,21 +361,32 @@ async def download_file(job_id: str):
 @app.get("/download_zip/{batch_id}")
 async def download_zip(batch_id: str):
 
-    batch = redis_client.get(f"batch:{batch_id}")
+    #batch = redis_client.get(f"batch:{batch_id}")
 
-    if not batch:
+    obj = minio_client.get_object(
+        BUCKET,
+        f"batches/{batch_id}.json"
+    )
+
+    batch = json.loads(
+        obj.read().decode("utf-8")
+    )
+
+    # Si es pendiente es porque se cayo el back y no se encolaron todos los jobs
+    """if batch["estado"] == "Pendiente":
         raise HTTPException(
-            status_code=404,
-            detail="Lote no encontrado"
-        )
+            status_code=409,
+            detail="El zip no fue procesado completamente"
+        )"""
 
-    jobs_data = json.loads(batch)
+    #jobs_data = json.loads(batch)
+    jobs = batch["jobs"]
 
     zip_buffer = io.BytesIO()
 
     with zipfile.ZipFile(zip_buffer, "w") as zipf:
 
-        for item in jobs_data:
+        for item in jobs:
 
             job_id = item["job_id"]
             original_name = item["original_name"]
@@ -317,8 +405,11 @@ async def download_zip(batch_id: str):
 
                 zipf.writestr(name, contenido)
 
-            except S3Error: #en caso de que el archivo sea un pdf no extraible
-                estado = redis_client.get(f"estado:{job_id}" or "error_desconocido")
+            except S3Error: #en caso de que el archivo sea un pdf no extraible o valkey este caido
+
+                estado = redis_client.get(f"estado:{job_id}")
+                if not estado:
+                    estado = "error_desconocido"
                 zipf.writestr(name, f"ERROR: {estado}")
     
     zip_buffer.seek(0)
@@ -347,14 +438,16 @@ async def websocket_status(websocket: WebSocket, job_id: str):
             pass
 
         status = redis_client.get(f"estado:{job_id}")
-        if status:
+        if status and status.startswith("error"):
+            await websocket.send_json({"estado": status})
+            break
+        elif status:
             await websocket.send_json({"estado": status})
         else:
-            await websocket.send_json({"estado": "Tarea no encontrada"})
+            await websocket.send_json({"estado": "Pendiente"})
 
         await asyncio.sleep(2)
 
     await websocket.close()
-
 
 
