@@ -48,10 +48,10 @@ def iniciar_worker():
         # Agregamos try except y sacamos block para que el worker se siga ejecutando por tiempo indefinido
         try:
             # Leemos el mensaje del stream, espera hasta 5 segundos si no hay mensajes
-            mensajes = r.xreadgroup(GROUP, CONSUMER, {STREAM: ">"}, count=1) #block=5000
+            mensajes = r.xreadgroup(GROUP, CONSUMER, {STREAM: ">"}, count=1, block=5000) #block=5000
 
-            if not mensajes:
-                continue  # seguimos esperando hasta que llegue un mensaje
+            #if not mensajes:
+                #continue  # seguimos esperando hasta que llegue un mensaje
 
             
             for stream, lista_mensajes in mensajes:
@@ -62,6 +62,7 @@ def iniciar_worker():
                     # datos  = {"job_id": "abc123", "file_path": "pdfs/abc123.pdf"}
                     job_id = datos["job_id"]
                     file_path = datos["file_path"]
+                    print(f"Worker recibió job {job_id}")
                     print(f"Procesando job {job_id}")
 
                     inicio = time.time()

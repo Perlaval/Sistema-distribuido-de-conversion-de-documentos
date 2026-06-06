@@ -95,11 +95,13 @@ async def upload_pdf(file: UploadFile = File(...)):
         zip_buffer = io.BytesIO(contenido_zip)
 
         jobs = []
-        batch_id = str(uuid.uuid4())
+        #batch_id = str(uuid.uuid4())
+        # agrego este solo para depurar logs,luego lo cambiamos
+        batch_id = f"batch-{uuid.uuid4().hex[:8]}"
 
         with zipfile.ZipFile(zip_buffer, "r") as zip_ref:
             
-            #usamos infolist pq el zip puede tener adentro otras carpetas entonces si lanzamos la excepcion porque cualquier archivo no es .pdf no me procesa lo que tengo adentro del zip 
+            #usamos infolist pq el zip puede tener adentro otras carpetas entonces si lanzamos la excepcion teniendo en cuenta que algun archivo dentro del zip no es .pdf no me procesa los archivos que si son .pdf
             for info in zip_ref.infolist():
                 
                 if info.is_dir():
@@ -108,11 +110,11 @@ async def upload_pdf(file: UploadFile = File(...)):
                 if not info.filename.lower().endswith(".pdf"):
                     continue
 
-                #if nombre_archivo.endswith(".pdf"):
-
                 pdf_data = zip_ref.read(info.filename)
 
                 job_id = str(uuid.uuid4())
+
+                original_name = os.path.basename(info.filename)
                 
 
                 file_path = f"pdfs/{job_id}.pdf"
@@ -126,17 +128,23 @@ async def upload_pdf(file: UploadFile = File(...)):
                 )
 
                 redis_client.xadd(STREAM, {
+                    #"batch_id": batch_id,
                     "job_id": job_id,
                     "file_path": file_path
                 })
 
 
-                jobs.append(job_id)
+                jobs.append({
+                    "job_id": job_id,
+                    "original_name": original_name
+                })
                 
-
                 redis_client.set(f"estado:{job_id}", "Pendiente")
 
             redis_client.set(f"batch:{batch_id}", json.dumps(jobs))
+
+            print(f"Batch creado: {batch_id}")
+            print(f"Job creado: {job_id}")
 
             return {
                 "batch_id": batch_id,
@@ -209,21 +217,35 @@ async def estado_zip(batch_id: str):
     completados = 0
     errores = 0
 
-    for job_id in jobs:
+    for job in jobs:
 
-        estado = redis_client.get(f"estado:{job_id}")
+        job_id = job["job_id"]
 
+        #---------------------------------------
+        try:
+            minio_client.stat_object(BUCKET, f"txt/{job_id}.txt")
+            #si no lanza excepción, el archivo existe y su estado es completado
+            estado = "Completado"
+        
+        except S3Error:
+            #Si no esta en MinIO, consultamos Valkey
+            estado = redis_client.get(f"estado:{job_id}") #MANEJAR SI VALKEY SE CAE
+            #if not status:
+                #return {"error": "Tarea no encontrada"}
+
+                     
         if estado == "Completado":
             completados += 1
 
         elif estado and estado.startswith("error"):
             errores += 1
 
-    if completados == total:
+    if completados + errores == total:
 
         return {
             "estado": "Completado",
             "completados": completados,
+            "errores": errores,
             "total": total
         }
 
@@ -270,26 +292,35 @@ async def download_zip(batch_id: str):
             detail="Lote no encontrado"
         )
 
-    jobs = json.loads(batch)
+    jobs_data = json.loads(batch)
 
     zip_buffer = io.BytesIO()
 
     with zipfile.ZipFile(zip_buffer, "w") as zipf:
 
-        for job_id in jobs:
+        for item in jobs_data:
 
-            obj = minio_client.get_object(
-                BUCKET,
-                f"txt/{job_id}.txt"
-            )
+            job_id = item["job_id"]
+            original_name = item["original_name"]
 
-            contenido = obj.read()
+            name = os.path.splitext(original_name)[0] + ".txt"
 
-            zipf.writestr(
-                f"{job_id}.txt",
-                contenido
-            )
+            try:
+                obj = minio_client.get_object(
+                    BUCKET,
+                    f"txt/{job_id}.txt"
+                )
 
+                contenido = obj.read()
+                #obj.close()
+                #obj.release_conn()
+
+                zipf.writestr(name, contenido)
+
+            except S3Error: #en caso de que el archivo sea un pdf no extraible
+                estado = redis_client.get(f"estado:{job_id}" or "error_desconocido")
+                zipf.writestr(name, f"ERROR: {estado}")
+    
     zip_buffer.seek(0)
 
     return StreamingResponse(

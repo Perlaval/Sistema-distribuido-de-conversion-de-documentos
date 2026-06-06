@@ -131,9 +131,22 @@ function startBatchPolling(batchId) {
 
                     clearInterval(interval);
 
-                    $("#status-msg").text(
-                        "Conversión completada"
-                    );
+                    if (data.errores > 0) {
+
+                        $("#status-msg").text(
+                            "Conversión finalizada. " +
+                            data.completados + 
+                            " archivos convertidos, " + "\n" +
+                            data.errores +
+                            " con error."
+                        ); 
+                        
+                    } else { 
+
+                        $("#status-msg").text(
+                            "Conversión completada"
+                        );
+                    }
 
                     $("#btn-descargar")
                         .attr(
