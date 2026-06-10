@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: pdf-converter
+spec:
+  replicas: 2  # arrancamos con 2 workers, KEDA va a escalar después
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+      - name: worker
+        image: perlavalerio/pdf-converter-worker:latest  
+        envFrom:
+        - configMapRef:
+            name: pdf-converter-config
+        - secretRef:
+            name: pdf-converter-secret
+
+# no tiene service ni ports porque no expone ningún endpoint HTTP — solo consume mensajes de Valkey internamente.

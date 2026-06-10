@@ -1,0 +1,18 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-scaledobject
+  namespace: pdf-converter
+spec:
+  scaleTargetRef:
+    name: worker
+  minReplicaCount: 0   # escala a 0 cuando no hay mensajes
+  maxReplicaCount: 5   # máximo 5 workers
+  cooldownPeriod: 30   # espera 30 segundos antes de escalar hacia abajo
+  triggers:
+  - type: redis-streams
+    metadata:
+      address: valkey.pdf-converter.svc.cluster.local:6379
+      stream: trabajos
+      consumerGroup: workers
+      lagCount: "5"    # escala cuando hay al menos 5 mensaje pendiente

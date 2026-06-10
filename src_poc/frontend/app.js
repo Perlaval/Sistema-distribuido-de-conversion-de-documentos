@@ -27,9 +27,9 @@ function updateUI(status, message) {
 }
 
 function startWebSocket(uuid) {
-    //var ws = new WebSocket('ws://127.0.0.1:8000/ws/' + uuid);
+    var ws = new WebSocket('ws://127.0.0.1:8000/ws/' + uuid);
 
-    var ws = new WebSocket('ws://' + window.location.host + '/ws/' + uuid);
+    //var ws = new WebSocket('ws://' + window.location.host + '/ws/' + uuid);
 
     ws.onmessage = function(event) {
         var data = JSON.parse(event.data);
@@ -40,8 +40,8 @@ function startWebSocket(uuid) {
           $("#btn-descargar")
             .attr(
                 "href",
-                //"http://127.0.0.1:8000/download/" + currentJobId
-                "/api/download/" + currentJobId
+                "http://127.0.0.1:8000/download/" + currentJobId
+                //"/api/download/" + currentJobId
             )
             .show();
         }
@@ -77,8 +77,8 @@ $(document).ready(function() {
 
   $('#btn-convertir').on('click', function() {
     $.ajax({
-      //url: 'http://127.0.0.1:8000/upload',  
-      url:         '/api/upload',
+      url: 'http://127.0.0.1:8000/upload',  
+      //url:         '/api/upload',
       method:      'POST',
       data:        new FormData($('#mi-form')[0]),
       contentType: false,
@@ -192,8 +192,8 @@ function startBatchPolling(batchId) {
     const interval = setInterval(function () {
 
         $.ajax({
-            //url: "http://127.0.0.1:8000/estado_zip/" + batchId,
-            url: "/api/estado_zip/" + batchId,
+            url: "http://127.0.0.1:8000/estado_zip/" + batchId,
+            //url: "/api/estado_zip/" + batchId,
             method: "GET"
         })
         .done(function(data) {
@@ -228,8 +228,8 @@ function startBatchPolling(batchId) {
                 $("#btn-descargar")
                     .attr(
                         "href",
-                        //"http://127.0.0.1:8000/download_zip/" + batchId
-                        "/api/download_zip/" + batchId
+                        "http://127.0.0.1:8000/download_zip/" + batchId
+                        //"/api/download_zip/" + batchId
                     )
                     .show();
                 

@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from minio import Minio
 from minio.error import S3Error
 import redis
+#from redis.cluster import RedisCluster
 import uuid
 import io
 import os
@@ -11,8 +12,10 @@ import io
 import zipfile
 import asyncio
 import json
+import urllib3
 
 
+urllib3.disable_warnings() #para que no muestre warnings de certificado inseguro
 app = FastAPI()
 
 ## CORS para que el navegador no bloquee la respuesa
@@ -35,7 +38,7 @@ MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
 BUCKET = "documentos"
 STREAM = "trabajos"
 
-redis_client = redis.Redis(
+"""redis_client = redis.Redis(
     host=VALKEY_HOST,
     port=VALKEY_PORT,
     password=VALKEY_PASSWORD,
@@ -43,7 +46,15 @@ redis_client = redis.Redis(
     socket_timeout=0.5,
     socket_connect_timeout=0.5
 
-)
+)"""
+
+redis_client = redis.Redis(
+    host=VALKEY_HOST, 
+    port=VALKEY_PORT,
+    password=VALKEY_PASSWORD,
+    decode_responses=True,
+    socket_timeout=0.5,
+    socket_connect_timeout=0.5)
 
 minio_client = Minio(MINIO_HOST, 
     access_key=MINIO_ACCESS_KEY, 

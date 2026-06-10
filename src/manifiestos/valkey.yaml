@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: valkey
+  namespace: pdf-converter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: valkey
+  template:
+    metadata:
+      labels:
+        app: valkey
+    spec:
+      containers:
+      - name: valkey
+        image: valkey/valkey:latest
+        command: ["valkey-server", "--appendonly", "yes"]
+        ports:
+        - containerPort: 6379
+        volumeMounts:
+        - name: valkey-data
+          mountPath: /data
+      volumes:
+      - name: valkey-data
+        # emptyDir: {} sacamos pq cuando el pod muere el volumne temporal se borra y valkey pierde el stream aunque tengamos AOF habilitado
+        persistentVolumeClaim:
+          claimName: valkey-pvc #cambiamos emptyDir por pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim #cambios Service por PersitentVolumeClaim
+metadata:
+  name: valkey-pvc #valkey
+  namespace: pdf-converter
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+  #selector:
+    #app: valkey
+  #ports:
+  #- port: 6379
+    #targetPort: 6379

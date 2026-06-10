@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversión de documentos PDF</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="container">
+
+    <h1>Conversión de documentos PDF</h1>
+
+    <p class="subtitle">
+        Subí tu archivo PDF y convertílo a texto fácilmente
+    </p>
+
+    <form id="mi-form">
+
+        <label for="file" class="upload-btn">
+            Seleccionar PDF
+        </label>
+
+        <input
+            type="file"
+            id="file"
+            name="file"
+            accept=".pdf, .zip"
+        >
+
+        <div class="file-info">
+            <span class="pdf-icon"></span>
+            <div>
+                <span id="file-name">
+                    Ningún archivo seleccionado
+                </span>
+                <small>PDF seleccionado</small>
+            </div>
+        </div>
+
+        <button type="button" id="btn-convertir">
+            Convertir documento
+        </button>
+
+    </form>
+
+    <div class="separator">
+        <span>ESTADO</span>
+    </div>
+
+    <div id="status-msg" class="status-card">
+        Esperando archivo...
+    </div>
+
+    <a id="btn-descargar" class="download-btn" style="display:none;">
+        ⬇ Descargar archivo
+    </a>
+
+    <p class="privacy">
+        Tu archivo es procesado de forma segura y privada.
+    </p>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>

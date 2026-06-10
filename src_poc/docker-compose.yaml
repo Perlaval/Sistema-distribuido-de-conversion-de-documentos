@@ -21,7 +21,7 @@ services:
       - minio_data:/data # convención de la imagen oficial de minio
 
   backend:
-    build: ./aplicacion/backend #en este caso no usamos una imagen, sino que construimos desde el dockerfile que esta en ./backend
+    build: ./backend #en este caso no usamos una imagen, sino que construimos desde el dockerfile que esta en ./backend
     ports:
       - "8000:8000" #expone FastApi para que el cliente se pueda conectar
     environment:
@@ -54,7 +54,7 @@ services:
       #- minio
 
   worker-1:
-    build: ./aplicacion/worker
+    build: ./worker
     container_name: src-worker-1
     environment:
       VALKEY_HOST: valkey
@@ -69,7 +69,7 @@ services:
       - minio
 
   worker-2:
-    build: ./aplicacion/worker
+    build: ./worker
     container_name: src-worker-2
     environment:
       VALKEY_HOST: valkey
@@ -84,7 +84,7 @@ services:
       - minio
 
   worker-3:
-    build: ./aplicacion/worker
+    build: ./worker
     container_name: src-worker-3
     environment:
       VALKEY_HOST: valkey
@@ -99,7 +99,7 @@ services:
       - minio
 
   worker-4:
-    build: ./aplicacion/worker
+    build: ./worker
     container_name: src-worker-4
     environment:
       VALKEY_HOST: valkey
@@ -114,7 +114,7 @@ services:
       - minio
   
   frontend:
-    build: ./aplicacion/frontend
+    build: ./frontend
     ports:
       - "80:80"
     depends_on:

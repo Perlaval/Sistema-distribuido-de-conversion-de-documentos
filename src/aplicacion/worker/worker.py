@@ -3,9 +3,14 @@ import os
 from minio import Minio
 from minio.error import S3Error
 import redis
+#from redis.cluster import RedisCluster
 from pdfminer.high_level import extract_text
 import tempfile
 import time
+import urllib3
+
+
+urllib3.disable_warnings() #para que no muestre warnings de certificado inseguro
 
 # Configuración desde variables de entorno------------------------------------------------------------
 
@@ -27,8 +32,20 @@ TIEMPO_MIN_INACTIVO = 30000 # consideramos muerto el worker si pierde la conexio
 
 # Conexiones ------------------------------------------------------------------------------------------
 
-r = redis.Redis(host=VALKEY_HOST, port=VALKEY_PORT, password=VALKEY_PASSWORD, decode_responses=True,socket_timeout = None)
-minio_client = Minio(MINIO_HOST, access_key=MINIO_ACCESS_KEY, secret_key=MINIO_SECRET_KEY, secure=False)
+#r = redis.Redis(host=VALKEY_HOST, port=VALKEY_PORT, password=VALKEY_PASSWORD, decode_responses=True,socket_timeout = None)
+r = redis.Redis(
+    host=VALKEY_HOST,
+    port=VALKEY_PORT,
+    password=VALKEY_PASSWORD,
+    decode_responses=True,
+    socket_timeout=None)
+    #socket_connect_timeout=2)
+
+minio_client = Minio(MINIO_HOST,
+    access_key=MINIO_ACCESS_KEY,
+    secret_key=MINIO_SECRET_KEY,
+    secure=True,
+    http_client=urllib3.PoolManager(cert_reqs='CERT_NONE'))
 
 #Inicializacion del stream ----------------------------------------------------------------------------
 def inicializar_stream():
@@ -81,10 +98,11 @@ def iniciar_worker():
 
 
             #2. Leemos el mensaje nuevo del stream, espera hasta 5 segundos si no hay mensajes
-            mensajes = r.xreadgroup(GROUP, CONSUMER, {STREAM: ">"}, count=1, block=5000) #block=5000
+            mensajes = r.xreadgroup(GROUP, CONSUMER, {STREAM: ">"}, count=1) #block=5000
 
-            #if not mensajes:
-                #continue  # seguimos esperando hasta que llegue un mensaje
+            if not mensajes:
+                time.sleep(1)
+                continue  # seguimos esperando hasta que llegue un mensaje
 
             
             for stream, lista_mensajes in mensajes:
@@ -117,15 +135,19 @@ def iniciar_worker():
                     # le dice a Valkey que este mensaje fue procesado exitosamente
                     # si el worker se cae antes del xack, el mensaje queda disponible para reintento
 
-        except redis.exceptions.ConnectionError as exc:
+        except redis.exceptions.ResponseError as exc:
             if "NOGROUP" in str(exc):
                 print("[ALERTA] Se detectó que el Stream o Grupo desapareció. Re-inicializando...")
-                inicializar_stream() 
+                try:
+                    inicializar_stream()
+                except Exception as init_err:
+                    print(f"Error al reinicializar: {init_err}")
+                    time.sleep(2) 
             else:
                 print("Error de conexión con Valkey. Reintentando en 5 segundos...")
                 time.sleep(5)
 
-        except Exception as e:
+        except redis.exceptions.ConnectionError as e:
             print("Error en worker:", e)
         
 def extraer_texto(pdf_path, job_id):
