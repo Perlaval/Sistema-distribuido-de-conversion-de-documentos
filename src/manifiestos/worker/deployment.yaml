@@ -15,11 +15,11 @@ spec:
     spec:
       containers:
       - name: worker
-        image: perlavalerio/pdf-converter-worker:latest  
+        image: triniperea/pdf-converter-worker:latest  
         envFrom:
         - configMapRef:
             name: pdf-converter-config
         - secretRef:
-            name: pdf-converter-secret
+            name: pdf-converter-secrets
 
 # no tiene service ni ports porque no expone ningún endpoint HTTP — solo consume mensajes de Valkey internamente.

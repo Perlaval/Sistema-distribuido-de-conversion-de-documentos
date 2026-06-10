@@ -229,6 +229,12 @@ async def upload_pdf(file: UploadFile = File(...), background_tasks: BackgroundT
         # esto nos permite que ya no se vea elprocesamientp de manera secuencial 
         # El usuario2 no tiene que esperar que se termine de procesar el zip del usuario1 para ver el avance de su conversion
         # Se realiza la tarea pesada de decomprimir, subidad de pdfs individuales y envio a cola valkey sin interferir con nuevas peticiones de otros usuarios
+
+        redis_client.set(f"batch:{batch_id}", json.dumps([job["job_id"] for job in jobs]))
+
+        for job in jobs:
+            redis_client.set(f"estado:{job['job_id']}", "Pendiente")
+
         background_tasks.add_task(procesar_zip_en_segundo_plano, ruta_zip_minio, batch_id, jobs)
         
         
@@ -455,12 +461,11 @@ async def download_zip(batch_id: str):
         }
     )
 
-## web socket para comunicacion con el cliente
+## web socket para comunicacion con el cliente cuando es un pdf
 @app.websocket("/ws/{job_id}")
 async def websocket_status(websocket: WebSocket, job_id: str):
     await websocket.accept()
     while True:
-        # Reutilizás la misma lógica de /estado
         try:
             minio_client.stat_object(BUCKET, f"txt/{job_id}.txt")
             redis_client.set(f"estado:{job_id}", "Completado")
@@ -482,4 +487,39 @@ async def websocket_status(websocket: WebSocket, job_id: str):
 
     await websocket.close()
 
+# webSocket cuando es un zip
+@app.websocket("/ws/batch/{batch_id}")
+async def websocket_batch(websocket: WebSocket, batch_id: str):
+    await websocket.accept()
+    while True:
+        batch = redis_client.get(f"batch:{batch_id}")
+        if not batch:
+            await websocket.send_json({"estado": "error", "mensaje": "Lote no encontrado"})
+            break
+
+        jobs = json.loads(batch)
+        total = len(jobs)
+        completados = 0
+        errores = 0
+
+        for job_id in jobs:
+            estado = redis_client.get(f"estado:{job_id}")
+            if estado == "Completado":
+                completados += 1
+            elif estado and estado.startswith("error"):
+                errores += 1
+
+        await websocket.send_json({
+            "estado": "Procesando" if completados + errores < total else "Completado",
+            "completados": completados,
+            "errores": errores,
+            "total": total
+        })
+
+        if completados + errores == total:
+            break
+
+        await asyncio.sleep(2)
+
+    await websocket.close()
 

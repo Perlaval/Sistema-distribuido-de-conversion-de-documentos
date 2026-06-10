@@ -15,11 +15,11 @@ spec:
     spec:
       containers:
       - name: backend
-        image: perlavalerio/pdf-converter-backend:latest  
+        image: triniperea/pdf-converter-backend:latest  
         ports:
         - containerPort: 8000
         envFrom:
         - configMapRef:
             name: pdf-converter-config
         - secretRef:
-            name: pdf-converter-secret
+            name: pdf-converter-secrets

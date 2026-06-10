@@ -4,7 +4,7 @@ metadata:
   name: backend
   namespace: pdf-converter
 spec:
-  type: LoadBalancer#ClusterIP  
+  type: LoadBalancer #ClusterIP  
   selector:
     app: backend
   ports:

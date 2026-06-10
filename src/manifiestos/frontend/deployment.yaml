@@ -15,6 +15,6 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: perlavalerio/pdf-converter-frontend:latest  
+        image: triniperea/pdf-converter-frontend:latest  
         ports:
         - containerPort: 80
