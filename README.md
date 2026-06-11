@@ -29,20 +29,8 @@ Por este motivo, el procesamiento se delega a Workers independientes que consume
 
 El sistema sigue una arquitectura distribuida desacoplada basada en el patrón **Pipeline**.
 
-```mermaid
-graph TD
-    A[Cliente / Navegador] -- HTTP POST /upload --> B[Backend API - FastAPI]
-    B -- Guarda PDF --> C[(MinIO Object Storage)]
-    B -- Publica tarea --> D{Valkey Stream}
+![Arquitectura del sistema](img/capas.jpeg)
 
-    D -- Consume tarea --> E[Worker 1]
-    D -- Consume tarea --> F[Worker N]
-
-    E -- Lee PDF / Guarda TXT --> C
-    F -- Lee PDF / Guarda TXT --> C
-
-    A -- WebSocket --> B
-```
 
 ### Componentes principales
 
@@ -138,7 +126,7 @@ Worker -> Valkey (Estado)
 Backend -> WebSocket -> Cliente
 ```
 ### Flujo Completo
-![Arquitectura del sistema](img/arquitectura.png)
+![Arquitectura del sistema](img/arquitectura.jpeg)
 
 ---
 
@@ -220,4 +208,4 @@ kubectl get svc -n pdf-converter
 
 ## 9. Trabajo Académico
 
-Proyecto desarrollado para la materia **Sistemas Distribuidos** de la **Licenciatura en Ciencias de la Computación**, **Universidad Nacional de Cuyo (UNCuyo)**.
+Proyecto desarrollado para la materia **Sistemas Distribuidos** de la **Licenciatura en Ciencias de la Computación**, **Universidad Nacional de Cuyo**.
