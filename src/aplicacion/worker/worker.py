@@ -52,6 +52,8 @@ def inicializar_stream():
 
     # Creamos el grupo de consumidores si no existe
     try:
+        # STREAM es el nombre de la cola de mensajes de redis
+        # GROUP grupo de consumidores dentro de stream (workers)
         r.xgroup_create(STREAM, GROUP, id="0", mkstream=True)
         print(f"Grupo '{GROUP}' creado en stream '{STREAM}'")
     except redis.exceptions.ResponseError as e:
@@ -170,6 +172,7 @@ def procesar_mensaje(job_id, file_path):
 
         # 1. Actualizamos el estado a "procesando" en Valkey
         r.set(f"estado:{job_id}", "Procesando")
+        r.publish(f"job:{job_id}", "Procesando")  # aviso por pub/sub a websocket
 
         # 2. Descargamos el PDF desde MinIO a un archivo temporal
         # porque pdfminer necesita leer el pdf desde el disco local
@@ -194,6 +197,12 @@ def procesar_mensaje(job_id, file_path):
 
         # 5. Actualizamos el estado a "completado" en Valkey
         r.set(f"estado:{job_id}", "Completado")
+        r.publish(f"job:{job_id}", "Completado")  # aviso por pub/sub a websocket
+
+        # Publicar también en el canal del batch si pertenece a uno
+        batch_id = r.get(f"job_batch:{job_id}")
+        if batch_id:
+            r.publish(f"batch:{batch_id}", job_id) 
         print(f"Job {job_id} Completado")
 
     except Exception as e:
@@ -206,6 +215,7 @@ def procesar_mensaje(job_id, file_path):
 #Main -------------------------------------------------------------------------------------------------
 if __name__ == "__main__":
     # Verificamos que el bucket existe, si no, lo creamos
+    # BUCKET es el nombre del contenedor de archivos dentro de minIO
     if not minio_client.bucket_exists(BUCKET):
         minio_client.make_bucket(BUCKET)
         print(f"Bucket '{BUCKET}' creado")

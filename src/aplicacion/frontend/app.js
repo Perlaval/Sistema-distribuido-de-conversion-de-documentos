@@ -22,6 +22,7 @@ function startWebSocket(jobId, esReconexion) {
 
     ws.onmessage = function(event) {
         var data = JSON.parse(event.data);
+        /*
         var labels = {
             'Pendiente':            'En cola...',
             'Procesando':           'Procesando PDF...',
@@ -30,14 +31,15 @@ function startWebSocket(jobId, esReconexion) {
             'error_pdf_corrupto':   'No se pudo leer el PDF',
             'error_pdf_sin_texto':  'El PDF no contiene texto',
             'error':                'Ocurrió un error durante la conversión'
-        };
+        };*/
 
         // Si es reconexión, mantener "Retomando..." hasta estado final
         if (esReconexion && data.estado !== 'Completado' && !data.estado.startsWith('error') && data.estado !== 'Tarea no encontrada') {
             return;  // "Retomando conversión anterior..." 
         }
 
-        updateUI(labels[data.estado] || data.estado);
+        updateUI(data.estado);
+        //updateUI(labels[data.estado] || data.estado);
 
         if (data.estado === 'Completado') {
             localStorage.removeItem('ultimo_job'); 
@@ -158,32 +160,29 @@ $(document).ready(function() {
         $('#btn-descargar').hide();
         updateUI('Subiendo archivo...');
 
+        // uso ajax porque necesito enviar el archivo binario al servidor
         $.ajax({
             url:         '/api/upload',
             method:      'POST',
-            data:        new FormData($('#mi-form')[0]),
+            data:        new FormData($('#mi-form')[0]), // con formdata ajax hace eso
+            // para que no toque el archivo, solo lo envie al back
             contentType: false,
             processData: false,
 
             success: function(response) {
                 //console.log("respuesta del backend:", response);
                 // PDF individual
-                /*
                 if (response.job_id) {
                     currentJobId = response.job_id;
-                    startWebSocket(response.job_id);
-                }*/
-                if (response.job_id) {
-                    currentJobId = response.job_id;
-                    localStorage.setItem('ultimo_job', response.job_id);
+                    localStorage.setItem('ultimo_job', response.job_id); // por si refresca la pagina
                     updateUI(response.message); // ← muestra "Archivo recibido y en cola de procesamiento"
                     startWebSocket(response.job_id);
                 }
                 // ZIP
                 else if (response.batch_id) {
                     //console.log("batch_id recibido:", response.batch_id);
-                    currentBatchId = response.batch_id;
-                    localStorage.setItem('ultimo_batch', response.batch_id);
+                    currentBatchId = response.batch_id; 
+                    localStorage.setItem('ultimo_batch', response.batch_id); // por si refresca la pagina
                     updateUI('ZIP recibido. PDFs a convertir: ' + response.cantidad_pdfs);
                     startBatchWebSocket(response.batch_id);
                 }
@@ -201,7 +200,7 @@ $(document).ready(function() {
         if (archivo) {
             var icono = archivo.name.endsWith('.zip') ? '📦 ' : '📄 ';
             $('#file-name').text(icono + archivo.name);
-            localStorage.setItem('ultimo_archivo_nombre', icono + archivo.name);
+            localStorage.setItem('ultimo_archivo_nombre', icono + archivo.name); // por si refresca la pagina
         }
     });
 

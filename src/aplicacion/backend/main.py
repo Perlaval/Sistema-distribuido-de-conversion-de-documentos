@@ -163,7 +163,7 @@ async def upload_pdf(file: UploadFile = File(...), background_tasks: BackgroundT
         # Subo el archivo a MinIO
         # El backend guarda el pdf fisicamente
         #s3_client.upload_fileobj(file.file, "input-pdfs", object_name)
-        contenido = await file.read()
+        contenido = await file.read()  #lee el binario
         minio_client.put_object(BUCKET, file_path, io.BytesIO(contenido), length = len(contenido), content_type = "application/pdf")
 
         # Publico el mensaje en el stream de Valkey (le paso el id del pdf que genere con uuid)
@@ -233,7 +233,9 @@ async def upload_pdf(file: UploadFile = File(...), background_tasks: BackgroundT
         redis_client.set(f"batch:{batch_id}", json.dumps([job["job_id"] for job in jobs]))
 
         for job in jobs:
+            redis_client.set(f"job_batch:{job['job_id']}", batch_id)
             redis_client.set(f"estado:{job['job_id']}", "Pendiente")
+            
 
         background_tasks.add_task(procesar_zip_en_segundo_plano, ruta_zip_minio, batch_id, jobs)
         
@@ -461,6 +463,88 @@ async def download_zip(batch_id: str):
         }
     )
 
+@app.websocket("/ws/{job_id}")
+async def websocket_status(websocket: WebSocket, job_id: str):
+    await websocket.accept()
+
+    # mando el estado actual por si ya estaba procesando
+    status = redis_client.get(f"estado:{job_id}")
+    await websocket.send_json({"estado": status or "Pendiente"})
+
+    # Nos suscribimos al canal de ese job
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe(f"job:{job_id}")
+
+    # Esperamos el mensaje del worker
+    loop = asyncio.get_event_loop()
+    while True:
+        mensaje = await loop.run_in_executor(None, pubsub.get_message, True, 1.0)
+        if mensaje and mensaje["type"] == "message":
+            estado = mensaje["data"]
+            await websocket.send_json({"estado": estado})
+            if estado == "Completado" or estado.startswith("error"):
+                break
+
+    pubsub.unsubscribe(f"job:{job_id}")
+    await websocket.close()
+
+@app.websocket("/ws/batch/{batch_id}")
+async def websocket_batch(websocket: WebSocket, batch_id: str):
+    await websocket.accept()
+
+    batch = redis_client.get(f"batch:{batch_id}")
+    if not batch:
+        await websocket.send_json({"estado": "error", "mensaje": "Lote no encontrado"})
+        await websocket.close()
+        return
+
+    jobs = json.loads(batch)
+    total = len(jobs)
+
+    # Contamos los que ya estaban completados antes de conectar
+    completados = sum(1 for job_id in jobs if redis_client.get(f"estado:{job_id}") == "Completado")
+    errores = sum(1 for job_id in jobs if redis_client.get(f"estado:{job_id}") and redis_client.get(f"estado:{job_id}").startswith("error"))
+
+    # Mandamos estado inicial
+    await websocket.send_json({
+        "estado": "Completado" if completados + errores == total else "Procesando",
+        "completados": completados,
+        "errores": errores,
+        "total": total
+    })
+
+    if completados + errores == total:
+        await websocket.close()
+        return
+
+    # Suscribimos al canal del batch
+    pubsub = redis_client.pubsub()
+    pubsub.subscribe(f"batch:{batch_id}")
+
+    loop = asyncio.get_event_loop()
+    while True:
+        mensaje = await loop.run_in_executor(None, pubsub.get_message, True, 1.0)
+        if mensaje and mensaje["type"] == "message":
+            # Llegó un job terminado, recalculamos
+            completados = sum(1 for job_id in jobs if redis_client.get(f"estado:{job_id}") == "Completado")
+            errores = sum(1 for job_id in jobs if redis_client.get(f"estado:{job_id}") and redis_client.get(f"estado:{job_id}").startswith("error"))
+
+            await websocket.send_json({
+                "estado": "Completado" if completados + errores == total else "Procesando",
+                "completados": completados,
+                "errores": errores,
+                "total": total
+            })
+
+            if completados + errores == total:
+                break
+
+    pubsub.unsubscribe(f"batch:{batch_id}")
+    await websocket.close()
+
+    
+
+'''
 ## web socket para comunicacion con el cliente cuando es un pdf
 @app.websocket("/ws/{job_id}")
 async def websocket_status(websocket: WebSocket, job_id: str):
@@ -522,4 +606,4 @@ async def websocket_batch(websocket: WebSocket, batch_id: str):
         await asyncio.sleep(2)
 
     await websocket.close()
-
+'''
