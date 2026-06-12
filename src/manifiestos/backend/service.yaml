@@ -10,6 +10,3 @@ spec:
   ports:
   - port: 8000
     targetPort: 8000
-
-#Es de tipo LoadBalancer porque necesitamos que el Frontend y los usuarios externos puedan acceder al Backend. 
-# MetalLB le asigna una IP del pool 10.66.1.61-10.66.1.70 que configuramos antes.

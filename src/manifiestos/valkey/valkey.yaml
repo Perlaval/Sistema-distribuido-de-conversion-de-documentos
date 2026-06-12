@@ -40,8 +40,3 @@ spec:
   resources:
     requests:
       storage: 1Gi
-  #selector:
-    #app: valkey
-  #ports:
-  #- port: 6379
-    #targetPort: 6379

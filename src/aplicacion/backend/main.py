@@ -4,7 +4,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from minio import Minio
 from minio.error import S3Error
 import redis
-#from redis.cluster import RedisCluster
 import uuid
 import io
 import os
@@ -37,16 +36,6 @@ MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
 
 BUCKET = "documentos"
 STREAM = "trabajos"
-
-"""redis_client = redis.Redis(
-    host=VALKEY_HOST,
-    port=VALKEY_PORT,
-    password=VALKEY_PASSWORD,
-    decode_responses=True,
-    socket_timeout=0.5,
-    socket_connect_timeout=0.5
-
-)"""
 
 redis_client = redis.Redis(
     host=VALKEY_HOST, 
@@ -271,20 +260,6 @@ async def get_status(job_id: str):
         return {"error": "Tarea no encontrada"}
     return {"job_id": job_id, "estado": status} #status.decode("utf-8")
 
-'''
-@app.get("/resultado/{job_id}")
-async def get_resultado(job_id: str):
-    # Endpoint para descargar el TXT resultante
-    try:
-        response = minio_client.get_object(BUCKET, f"txt/{job_id}.txt")
-        return StreamingResponse(
-            response,
-            media_type="text/plain",
-            headers={"Content-Disposition": f"attachment; filename={job_id}.txt"}
-        )
-    except S3Error:
-        raise HTTPException(status_code=404, detail="Resultado no disponible todavía")
-'''
 
 @app.get("/estado_zip/{batch_id}")
 async def estado_zip(batch_id: str):
@@ -371,10 +346,7 @@ async def estado_zip(batch_id: str):
         )
 
     
-
-    
-
-## para descargar el archivo ya convertido
+# para descargar el archivo ya convertido
 @app.get("/download/{job_id}")
 async def download_file(job_id: str):
 
@@ -414,11 +386,11 @@ async def download_zip(batch_id: str):
     )
 
     # Si es pendiente es porque se cayo el back y no se encolaron todos los jobs
-    """if batch["estado"] == "Pendiente":
-        raise HTTPException(
-            status_code=409,
-            detail="El zip no fue procesado completamente"
-        )"""
+    #if batch["estado"] == "Pendiente":
+        #raise HTTPException(
+            #status_code=409,
+            #detail="El zip no fue procesado completamente"
+        #)
 
     #jobs_data = json.loads(batch)
     jobs = batch["jobs"]
@@ -544,66 +516,3 @@ async def websocket_batch(websocket: WebSocket, batch_id: str):
 
     
 
-'''
-## web socket para comunicacion con el cliente cuando es un pdf
-@app.websocket("/ws/{job_id}")
-async def websocket_status(websocket: WebSocket, job_id: str):
-    await websocket.accept()
-    while True:
-        try:
-            minio_client.stat_object(BUCKET, f"txt/{job_id}.txt")
-            redis_client.set(f"estado:{job_id}", "Completado")
-            await websocket.send_json({"estado": "Completado"})
-            break  # estado final, cerramos
-        except S3Error:
-            pass
-
-        status = redis_client.get(f"estado:{job_id}")
-        if status and status.startswith("error"):
-            await websocket.send_json({"estado": status})
-            break
-        elif status:
-            await websocket.send_json({"estado": status})
-        else:
-            await websocket.send_json({"estado": "Pendiente"})
-
-        await asyncio.sleep(2)
-
-    await websocket.close()
-
-# webSocket cuando es un zip
-@app.websocket("/ws/batch/{batch_id}")
-async def websocket_batch(websocket: WebSocket, batch_id: str):
-    await websocket.accept()
-    while True:
-        batch = redis_client.get(f"batch:{batch_id}")
-        if not batch:
-            await websocket.send_json({"estado": "error", "mensaje": "Lote no encontrado"})
-            break
-
-        jobs = json.loads(batch)
-        total = len(jobs)
-        completados = 0
-        errores = 0
-
-        for job_id in jobs:
-            estado = redis_client.get(f"estado:{job_id}")
-            if estado == "Completado":
-                completados += 1
-            elif estado and estado.startswith("error"):
-                errores += 1
-
-        await websocket.send_json({
-            "estado": "Procesando" if completados + errores < total else "Completado",
-            "completados": completados,
-            "errores": errores,
-            "total": total
-        })
-
-        if completados + errores == total:
-            break
-
-        await asyncio.sleep(2)
-
-    await websocket.close()
-'''

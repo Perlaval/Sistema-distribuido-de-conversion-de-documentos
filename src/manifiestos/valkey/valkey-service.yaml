@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"name":"valkey","namespace":"pdf-converter"},"spec":{"ports":[{"port":6379,"targetPort":6379}],"selector":{"app":"valkey"}}}
+  creationTimestamp: "2026-06-07T03:25:34Z"
+  name: valkey
+  namespace: pdf-converter
+  resourceVersion: "4369702"
+  uid: 5f494505-585a-4222-9e04-f195d7c2f69a
+spec:
+  clusterIP: 10.43.96.228
+  clusterIPs:
+  - 10.43.96.228
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 6379
+    protocol: TCP
+    targetPort: 6379
+  selector:
+    app: valkey
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
